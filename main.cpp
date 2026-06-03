@@ -8,192 +8,335 @@
 #include <stdio.h>
 #include <algorithm>
 
-const int WINDOW_W = 640;
-const int WINDOW_H = 480;
-const double WINDOW_SCALE = 1.2;
+int WINDOW_W = 640;
+int WINDOW_H = 480;
+//64*48=3 072 /2= 1536
+double WINDOW_SCALE = 1.2;
 int WINDOW_X;
 int WINDOW_Y;
 int MOUSE_X;
 int MOUSE_Y;
+SDL_Window* window = NULL;
+SDL_Renderer* renderer = NULL;
+SDL_Event e;
+int score = 0, active_enemy = 0;
 
-bool RenderText(
-    SDL_Renderer *renderer, //where to render
-    TTF_Font *font, //text font
-    std::string stext, //text
-    SDL_Color scolor, //text color
-    int x, //position x of top-left corner in window
-    int y //position y of top-left corner in window
-)
+class Ltexture
 {
-    if (font == NULL)
+public:
+    Ltexture();
+    ~Ltexture();
+    void load(std::string path);
+    void lfree();
+    void render(int x, int y, int w, int h);
+    void loadtext(std::string text, SDL_Color color, int tsize);
+private:
+    SDL_Texture* mTexture;
+    int tWidth;
+    int tHeight;
+};
+
+Ltexture::Ltexture()
+{
+    mTexture = NULL;
+    tWidth = 0;
+    tHeight = 0;
+}
+Ltexture::~Ltexture()
+{
+    lfree();
+}
+void Ltexture::load(std::string path)
+{
+    lfree();
+    SDL_Texture* newTexture = NULL;
+    SDL_Surface* newSurface = IMG_Load(path.c_str());
+    SDL_SetColorKey(newSurface,SDL_TRUE, SDL_MapRGB(newSurface->format, 0x03, 0xFF, 0xFF));
+    newTexture = SDL_CreateTextureFromSurface(renderer, newSurface);
+    tWidth = newSurface->w;
+    tHeight = newSurface->h;
+    SDL_FreeSurface(newSurface);
+    mTexture = newTexture;
+}
+void Ltexture::loadtext(std::string text, SDL_Color color, int tsize)
+{
+    lfree();
+    SDL_Surface* textSurface = TTF_RenderText_Solid(TTF_OpenFont("arial.ttf", tsize), text.c_str(), color);
+    if(textSurface != NULL)
     {
-        std::cout<<stext<<std::endl;
-        return true;
+        mTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+        tWidth = textSurface->w;
+        tHeight = textSurface->h;
+        SDL_FreeSurface(textSurface);
     }
-    SDL_Surface *surface;
-    SDL_Texture *texture;
-    //SDL_Color *color = {scolor.r,scolor.g,scolor.b,scolor.a};
-    const char *text = stext.c_str();
-    surface = TTF_RenderText_Solid(font, text, scolor);
-    texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_Rect *rect;
-    rect->x = x;
-    rect->y = y;
-    rect->w = surface->w;
-    rect->h = surface->h;
-    SDL_RenderCopy(renderer, texture, NULL, rect);
-    SDL_FreeSurface(surface);
-    SDL_DestroyTexture(texture);
-    return false;
-} //RenderText(renderer,TTF_OpenFont("arial.ttf", 18), "test", {29,255,255,255}, 20, 20);
-
-
-void RenderImg
-(
-    SDL_Renderer *renderer,
-    std::string spath,
-    int x,
-    int y,
-    int w,
-    int h
-)
-{
-    SDL_Texture *texture = NULL;
-    const char *path = spath.c_str();
-    SDL_Surface *temp = IMG_Load(path);
-    texture = SDL_CreateTextureFromSurface(renderer, temp);
-    SDL_Rect *rect;
-    rect->x = x;
-    rect->y = y;
-    rect->w = w;
-    rect->h = h;
-    SDL_RenderCopy(renderer, texture, NULL, rect);
-    SDL_FreeSurface(temp);
-    SDL_DestroyTexture(texture);
 }
-
-bool SceneStart(SDL_Renderer *renderer, bool check)
+void Ltexture::lfree()
 {
-    if(!check) {return check;}
-    SDL_Texture *smile = NULL;
-    SDL_Surface *temp = IMG_Load("pic.bmp");
-    smile = SDL_CreateTextureFromSurface(renderer, temp);
-    SDL_RenderCopy(renderer, smile, NULL, NULL);
-    SDL_RenderPresent(renderer);
-    return check;
+    if(mTexture != NULL)
+    {
+        SDL_DestroyTexture(mTexture);
+        mTexture = NULL;
+        tWidth = 0;
+        tHeight = 0;
+    }
 }
+void Ltexture::render(int x, int y, int w = -1, int h = -1)
+{
+    if(w == -1 && h == -1)
+    {
+        w = tWidth;
+        h = tHeight;
+    }
+    SDL_Rect rect = {x, y, w, h};
+    SDL_RenderCopy(renderer, mTexture, NULL, &rect);
+}
+Ltexture omni;
+Ltexture textLevel;
+Ltexture textScore;
+Ltexture Lbullet;
+Ltexture Lheart;
+Ltexture LTitle;
+Ltexture Lenemy;
+Ltexture Lplayer;
 class Mob
 {
 public:
-    int health = 1;
-    double xpstn = 0;
-    double ypstn = 0;
-    int weight = 0;
-    int height = 0;
-    std::string texture;
-    char brain = 'u';
-    double xvec = 0;
-    double yvec = 0;
-    double speed = 0;
-    int cooldown = 50;
-    int lastcldw = 50;
-    bool shown = false;
-    bool fire = false;
+    Mob();
+    double xposition;
+    double yposition;
+    int width;
+    int height;
+    int invulve = 5;
+    void setting(int HP, int X, int Y, int W, int H, Ltexture* Image, char Type, double XVector, double YVector, double Speed, int cooldown);
+    void renavigate(int xtarget, int ytarget);
+    bool moving();
+    bool render();
+    void gettingdamage(int damage = 1);
+    int gethelth();
+    char gettype();
+    bool firing();
+    void kill(int id);
+    bool colliding(int id);
+    void mfree();
+private:
+    int health;
+    Ltexture* sprite;
+    char brain;
+    double xvector;
+    double yvector;
+    double speed;
+    int guncooldown;
+    int remaincooldown;
+    bool shooting;
+};
 
-    void set(int hp, double x, double y, int w, int h, std::string temptexture,char type, double xvector, double yvector, double spEEd, int shootcooldown)
+std::vector<Mob> Mobs;
+
+Mob::Mob()
+{
+    health = 1;
+    xposition = 0;
+    yposition = 0;
+    width = 0;
+    height = 0;
+    brain ='u';
+    xvector = 0;
+    yvector = 0;
+    speed = 0;
+    guncooldown = 0;
+    remaincooldown = 0;
+    shooting = false;
+}
+void Mob::setting(int HP, int X, int Y, int W, int H, Ltexture* Image, char Type, double XVector, double YVector, double Speed, int cooldown)
+{
+    health = HP;
+    xposition = X;
+    yposition = Y;
+    width = W;
+    height = H;
+    sprite = Image;
+    brain = Type;
+    xvector = XVector;
+    yvector = YVector;
+    speed = Speed;
+    guncooldown = cooldown;
+    shooting = true;
+}
+void Mob::renavigate(int xtarget, int ytarget)
+{
+    if(brain != 'p')
     {
-        health = hp;
-        xpstn = x;
-        ypstn = y;
-        weight = w;
-        height = h;
-        texture = temptexture;
-        brain = type;
-        xvec = xvector;
-        yvec = yvector;
-        speed = spEEd;
-        cooldown = shootcooldown;
-        shown = true;
-    };/*
-    void render(SDL_Renderer *renderer)
-    {
-        RenderImg(renderer, texture, xpstn, ypstn, weight, height);
-    }*/
-    void renavigate(double xtarget, double ytarget)
-    {
-        double akatet = xtarget - xpstn;
-        double bkatet = ytarget - ypstn;
+        double akatet = xtarget - xposition;
+        double bkatet = ytarget - yposition;
         double gipot = sqrt((akatet * akatet) + (bkatet * bkatet));
-        xvec = akatet * speed / gipot;
-        yvec = bkatet * speed / gipot;
-    };
-    int gunreloaded()
+        xvector = akatet * speed / gipot;
+        yvector = bkatet * speed / gipot;
+    }
+    else
     {
-        if((lastcldw <= 0) && fire && (brain != 'b')){
-            lastcldw = cooldown;
-            return 1;
-        }
-        lastcldw--;
-        return 0;
-    };
-    void move()
-    {
-        xpstn += xvec;
-        ypstn += yvec;
-    };
-    void userinput(SDL_Event& e)
-    {
-        if(e.type == SDL_KEYDOWN)
+        if(e.type == SDL_KEYDOWN && e.key.repeat == 0)
         {
             switch (e.key.keysym.sym)
             {
-            case SDLK_w:
-                yvec = -0;
+            case SDLK_w: case SDLK_UP: yvector -= speed;
                 break;
-            case SDLK_s:
-                yvec = 0;
+            case SDLK_s: case SDLK_DOWN: yvector += speed;
                 break;
-            case SDLK_a:
-                xvec = -3;
+            case SDLK_a: case SDLK_LEFT: xvector -= speed;
                 break;
-            case SDLK_d:
-                xvec = 3;
+            case SDLK_d: case SDLK_RIGHT: xvector += speed;
                 break;
             }
         }
-        else if(e.type == SDL_KEYUP)
+        else if(e.type == SDL_KEYUP && e.key.repeat == 0)
         {
             switch (e.key.keysym.sym)
             {
-            case SDLK_w: case SDLK_s:
-                yvec = 0;
+            case SDLK_w: case SDLK_UP: yvector += speed;
                 break;
-            case SDLK_a: case SDLK_d:
-                xvec = 0;
+            case SDLK_s: case SDLK_DOWN: yvector -= speed;
+                break;
+            case SDLK_a: case SDLK_LEFT: xvector += speed;
+                break;
+            case SDLK_d: case SDLK_RIGHT: xvector -= speed;
                 break;
             }
         }
         if(e.type == SDL_MOUSEBUTTONDOWN)
         {
-            fire = true;
+            shooting = true;
+
         }
         else if(e.type == SDL_MOUSEBUTTONUP)
         {
-            fire = false;
+            shooting = false;
         }
-    };
-};
-
-
-
+    }
+}
+bool Mob::moving()
+{
+    xposition+=xvector;
+    yposition+=yvector;
+    bool brdr = false;
+    if(xposition < 0 || xposition > WINDOW_W-width)
+    {
+        xposition-=xvector*1.1;
+        brdr = true;
+    }
+    if(yposition < 0 || yposition > WINDOW_H-height)
+    {
+        yposition-=yvector*1.1;
+        brdr = true;
+    }
+    if(brdr && brain == 'b')
+    {
+        return true;
+    }
+    else if(brdr && brain != 'p')
+    {
+        renavigate(Mobs[0].xposition, Mobs[0].yposition);
+    }
+    return false;
+}
+bool Mob::render()
+{
+    if(sprite == 0) {return false;}
+    sprite->render(xposition, yposition, width, height);
+    return true;
+}
+void Mob::gettingdamage(int damage)
+{
+    if(brain == 'p' && invulve <= 0)
+    {
+        health-=damage;
+        invulve = 60;
+    } else if (brain != 'p')
+    {
+        health-=damage;
+    }
+}
+int Mob::gethelth()
+{
+    return health;
+}
+char Mob::gettype()
+{
+    return brain;
+}
+bool Mob::firing()
+{
+    if(invulve > -1) {invulve--;}
+    if(sprite != NULL && remaincooldown <= 0 && brain != 'b' && shooting)
+    {
+        remaincooldown = guncooldown;
+        Mob bullet;
+        if(brain == 'p')
+        {
+            SDL_GetWindowPosition(window, &WINDOW_X, &WINDOW_Y);
+            SDL_GetGlobalMouseState(&MOUSE_X,&MOUSE_Y);
+            MOUSE_X = (MOUSE_X - WINDOW_X)/WINDOW_SCALE;
+            MOUSE_Y = (MOUSE_Y - WINDOW_Y)/WINDOW_SCALE;
+            double akatet = MOUSE_X - xposition;
+            double bkatet = MOUSE_Y - yposition;
+            double gipot = sqrt((akatet * akatet) + (bkatet * bkatet));
+            bullet.setting(1,
+                            xposition + width/2 + akatet*width/gipot,
+                            yposition + height/2 + bkatet*height/gipot,
+                            3, 3, &Lbullet, 'b', 1, 1, 6, 0);
+            bullet.renavigate(MOUSE_X,MOUSE_Y);
+        }
+        else
+        {
+             double akatet = Mobs[0].xposition - xposition;
+             double bkatet = Mobs[0].yposition - yposition;
+             double gipot = sqrt((akatet * akatet) + (bkatet * bkatet));
+             bullet.setting(1,
+                            xposition + width/2 + akatet*width/gipot,
+                            yposition + height/2 + bkatet*height/gipot,
+                            3, 3, &Lbullet, 'b', 1, 1, 6, 0);
+            bullet.renavigate(Mobs[0].xposition, Mobs[0].yposition);
+        }
+        Mobs.push_back(bullet);
+        return true;
+    }
+    remaincooldown--;
+    if(remaincooldown < -1000) {remaincooldown = -1;}
+    return false;
+}
+void Mob::mfree()
+{
+    sprite->lfree();
+}
+void Mob::kill(int id)
+{
+    Mobs.erase(Mobs.begin() + id);
+    if(brain != 'b') {score += 10; active_enemy--;}
+}
+bool Mob::colliding(int id)
+{
+    int tempint = Mobs.size();
+    for(int i = 0; i < tempint; i++)
+    {
+        if(
+           id != i &&
+           brain != Mobs[i].gettype() &&
+           xposition > Mobs[i].xposition &&
+           xposition < (Mobs[i].xposition + Mobs[i].width) &&
+           yposition > Mobs[i].yposition &&
+           yposition < (Mobs[i].yposition + Mobs[i].height)
+          )
+          {
+            gettingdamage();
+            Mobs[i].gettingdamage();
+            return true;
+          }
+    }
+    return false;
+}
 
 int main(int argc, char **argv)
 {
     bool RUNNING = true;
-    bool start = true;
-    SDL_Window* window = NULL;
-    SDL_Renderer* renderer = NULL;
-    SDL_Event e;
     if(SDL_Init(SDL_INIT_VIDEO) < 0)
     {
         printf("%s\n", SDL_GetError());
@@ -203,22 +346,37 @@ int main(int argc, char **argv)
     window = SDL_CreateWindow("Happy Title", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_W * WINDOW_SCALE, WINDOW_H * WINDOW_SCALE, SDL_WINDOW_RESIZABLE);
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_RenderSetScale(renderer,WINDOW_SCALE,WINDOW_SCALE);
+    omni.load("pic.bmp");
+    Lbullet.load("bullet.bmp");
+    Lplayer.load("player.bmp");
+    Lenemy.load("enemy.bmp");
+    LTitle.load("Title.bmp");
+    Lheart.load("heart.bmp");
+    textLevel.loadtext("Level ",{200,220,255,175},18);
+    textScore.loadtext("Score ",{200,220,255,175},18);
 
-
+    newgame:
+    Mobs.clear();
+    Mobs.reserve(1536);
+    bool start = true;
     Mob player;
-    player.set(3, WINDOW_W/2, WINDOW_H/2, 10, 10, "pic.bmp", 'p', 0, 0, 3, 21);
-    Mob gag;
-    std::vector<Mob> Mobs;
+    player.setting(5, WINDOW_W/2, WINDOW_H/2, 10, 10, &Lplayer, 'p', 0, 0, 3, 30);
     Mobs.push_back(player);
-    double level = 1;
-    int score = 0, active_mobs = 0, active_enemy = 0;
-
+    score = 0;
+    active_enemy = 0;
+    LTitle.render(0,0,WINDOW_W,WINDOW_H);
+    SDL_RenderPresent(renderer);
+    int spawntimer = 5;
 
     while(RUNNING)
     {
+        if(Mobs[0].gettype() != 'p')
+        {
+            goto newgame;
+        }
         //---
-        SDL_GetWindowPosition(window, &WINDOW_X, &WINDOW_Y);
-        SDL_GetGlobalMouseState(&MOUSE_X,&MOUSE_Y);
+        SDL_GetWindowSizeInPixels(window, &WINDOW_W, &WINDOW_H);
+        WINDOW_W/=WINDOW_SCALE;WINDOW_H/=WINDOW_SCALE;
         while(SDL_PollEvent(&e) != 0)
         {
             if(e.type == SDL_QUIT || e.key.keysym.sym == SDLK_ESCAPE)
@@ -226,32 +384,47 @@ int main(int argc, char **argv)
                 RUNNING = false;
             }
             if(e.type == SDL_KEYDOWN) { start = false;}
-            Mobs[0].userinput(e);
+            Mobs[0].renavigate(0,0);
         }
-        if(SceneStart(renderer,start)){continue;}
+        if(start){SDL_Delay(2); continue;}
         SDL_RenderClear(renderer);
 
-        Mobs[0].move();
-        //if(Mobs[0].gunreloaded())
-        //{
-        //    std::cout<<std::endl;
+        spawntimer--;
+        if(spawntimer == 0)
+        {
+            Mob enemy;
+            enemy.setting(3, rand()%(WINDOW_W-40)+20, 2, 20, 15, &Lenemy, 'e', 0, 1, 1, 160);
+            Mobs.push_back(enemy);
+            active_enemy++;
+            spawntimer = 120 - (score/10);
+        }
+        int tempint = Mobs.size();
+        for(int i = 0; i < tempint; i++)
+        {
+            Mobs[i].render();
+            Mobs[i].colliding(i);
+            if(Mobs[i].moving() || Mobs[i].gethelth() <= 0)
 
-        //}
-        //for(int i = 0; i != Mobs.size(); i++)
-        //{
-        //Mobs[0].render(renderer);
-        //}
-
-        int *a = Mobs[0].speed;
-        std::cout<<a;
-        RenderImg(renderer, Mobs[0].texture, Mobs[0].xpstn,Mobs[0].xpstn,Mobs[0].weight,Mobs[0].height);
-        RenderText(renderer, TTF_OpenFont("arial.ttf", 18), "Level ", {200,220,255,175}, 1, 1);
-        RenderText(renderer, TTF_OpenFont("arial.ttf", 18), "Score ", {200,220,255,175}, 1, 19);
-        SDL_Delay(100);
+            {
+                Mobs[i].kill(i);
+                continue;
+            }
+            Mobs[i].firing();
+        }
+        textLevel.render(1,1);
+        textScore.render(1,19);
+        for(int i = 0; i != Mobs[0].gethelth(); i++)
+        {
+            Lheart.render(1+(26*i), WINDOW_H-26, 24, 24);
+        }
+        SDL_Delay(21);
         //---
         SDL_RenderPresent(renderer);
     }
-
+    Mobs.clear();
+    omni.lfree();
+    textLevel.lfree();
+    textScore.lfree();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
